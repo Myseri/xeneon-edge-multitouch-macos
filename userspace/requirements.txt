@@ -1,0 +1,4 @@
+# Use 'hidapi' (not 'hid') - bundles native library, no brew dependency needed
+hidapi>=0.14.0
+pyobjc-framework-Quartz>=10.0
+pyobjc-framework-ApplicationServices>=10.0

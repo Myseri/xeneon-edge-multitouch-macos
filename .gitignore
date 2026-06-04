@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.DS_Store
+*.log
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xccheckout
+*.moved-aside
+*.xcbkptlist
+
+# Build artifacts
+build/
+*.dext
+
+# Certificates (never commit these)
+*.p12
+*.cer
+*.mobileprovision

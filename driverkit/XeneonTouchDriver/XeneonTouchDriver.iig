@@ -1,0 +1,13 @@
+#ifndef XeneonTouchDriver_h
+#define XeneonTouchDriver_h
+
+#include <HIDDriverKit/IOUserUSBHostHIDDevice.iig>
+
+class XeneonTouchDriver : public IOUserUSBHostHIDDevice
+{
+public:
+    virtual kern_return_t Start(IOService * provider) override;
+    virtual kern_return_t Stop(IOService * provider) override;
+};
+
+#endif /* XeneonTouchDriver_h */

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+
+    <key>CFBundleName</key>
+    <string>XeneonTouchDriver</string>
+
+    <key>CFBundlePackageType</key>
+    <string>DEXT</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+
+    <key>CFBundleVersion</key>
+    <string>1</string>
+
+    <!--
+        IOKitPersonalities: match on Interface 0 of the WCH touch controller.
+        We match at the IOUSBHostInterface level so we get the device BEFORE
+        AppleUserHIDDevice does, then use IOUserUSBHostHIDDevice to provide
+        the full HID stack ourselves.
+
+        IOProbeScore 200000 outbids Apple's default HID driver (~90000).
+    -->
+    <key>IOKitPersonalities</key>
+    <dict>
+
+        <key>XeneonEdgeTouchDigitizer</key>
+        <dict>
+            <!-- Required DriverKit keys -->
+            <key>CFBundleIdentifier</key>
+            <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
+            <key>IOClass</key>
+            <string>IOUserService</string>
+
+            <key>IOUserClass</key>
+            <string>XeneonTouchDriver</string>
+
+            <key>IOUserServerName</key>
+            <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
+            <!-- Match on the USB interface, not the HID layer -->
+            <key>IOProviderClass</key>
+            <string>IOUSBHostInterface</string>
+
+            <!-- WCH touch controller -->
+            <key>idVendor</key>
+            <integer>10176</integer>   <!-- 0x27C0 -->
+
+            <key>idProduct</key>
+            <integer>2137</integer>    <!-- 0x0859 -->
+
+            <!-- Interface 0 is the digitizer (HID class 3, usage page 13) -->
+            <key>bInterfaceNumber</key>
+            <integer>0</integer>
+
+            <!-- Outbid Apple's HID driver -->
+            <key>IOProbeScore</key>
+            <integer>200000</integer>
+
+            <!-- Only match the HID class interface -->
+            <key>bInterfaceClass</key>
+            <integer>3</integer>
+        </dict>
+
+    </dict>
+
+    <key>OSBundleUsageDescription</key>
+    <string>XeneonTouchDriver enables multitouch support for the Corsair Xeneon Edge touchscreen on macOS.</string>
+
+</dict>
+</plist>
