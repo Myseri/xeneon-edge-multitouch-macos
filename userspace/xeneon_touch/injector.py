@@ -1,141 +1,113 @@
 """
-Inject pointer events into macOS using CGEvent.
+Touch injector — warps cursor and posts synthetic click events.
 
-Strategy
---------
-The WingCoolTouch mouse interface already generates relative mouse events,
-which land on whatever monitor is currently "active" — the wrong screen.
-
-We use a CGEventTap to intercept those mouse events from the specific device
-and replace their position with the absolute coordinates from our digitizer
-parser, mapped to the Xeneon Edge display.
-
-Requires Accessibility permission (System Settings → Privacy → Accessibility).
+CGWarpMouseCursorPosition moves the cursor visually, but click events
+from the WCH device register at the pre-warp position. We post our own
+synthetic mouse events at the correct Xeneon Edge coordinates.
 """
 
+import ctypes
 import logging
 import threading
 import time
 from typing import Optional
 
-import Quartz
-from Quartz import (
-    CGEventTapCreate, CGEventTapEnable,
-    CGEventCreateMouseEvent, CGEventSetLocation,
-    CGEventPost, CGEventGetType, CGEventGetLocation,
-    kCGEventMouseMoved, kCGEventLeftMouseDown,
-    kCGEventLeftMouseUp, kCGEventRightMouseDown,
-    kCGEventRightMouseUp, kCGHIDEventTap,
-    kCGHeadInsertEventTap, kCGEventTapOptionDefault,
-    CGEventMaskBit, CGEventGetIntegerValueField,
-    kCGMouseEventSubtype,
-    CGRunLoopSourceCreate, CFRunLoopAddSource,
-    CFRunLoopGetCurrent, CFRunLoopRun, CFRunLoopStop,
-    kCFRunLoopDefaultMode,
-)
-
 from .display import DisplayMapper
-from .parser import TouchContact
 
 log = logging.getLogger(__name__)
 
-# CGEvent field for device ID — lets us filter by which device generated it
-kCGEventSourceUnixProcessID = 41
-kCGMouseEventWindowUnderMousePointer = 62
+# ── frameworks ────────────────────────────────────────────────────────────────
+_QZ = ctypes.cdll.LoadLibrary(
+    '/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices')
+
+_vp  = ctypes.c_void_p
+_i32 = ctypes.c_int32
+_u32 = ctypes.c_uint32
+_dbl = ctypes.c_double
+
+class _CGPoint(ctypes.Structure):
+    _fields_ = [("x", _dbl), ("y", _dbl)]
+
+_QZ.CGWarpMouseCursorPosition.restype  = _i32
+_QZ.CGWarpMouseCursorPosition.argtypes = [_CGPoint]
+
+_QZ.CGEventCreateMouseEvent.restype  = _vp
+_QZ.CGEventCreateMouseEvent.argtypes = [_vp, _u32, _CGPoint, _u32]
+
+_QZ.CGEventPost.restype  = None
+_QZ.CGEventPost.argtypes = [_u32, _vp]
+
+_QZ.CFRelease.restype  = None
+_QZ.CFRelease.argtypes = [_vp]
+
+kCGEventLeftMouseDown = 1
+kCGEventLeftMouseUp   = 2
+kCGEventMouseMoved    = 5
+kCGHIDEventTap        = 0
+kCGMouseButtonLeft    = 0
 
 
 class TouchInjector:
-    """
-    Intercepts mouse events from the WingCoolTouch device and remaps
-    their position to the Xeneon Edge display.
-    """
-
     def __init__(self, mapper: DisplayMapper):
-        self.mapper = mapper
-        self._last_point: Optional[Quartz.CGPoint] = None
-        self._last_touch_time: float = 0.0
-        self._tap = None
-        self._loop = None
+        self.mapper   = mapper
+        self._reader  = None
         self._thread: Optional[threading.Thread] = None
-        self._active = False
+        self._active  = False
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
-    def update_touch(self, contact: Optional[TouchContact]):
-        """Called by the HID reader thread whenever a touch event arrives."""
-        if contact is None or not contact.tip_switch:
-            self._last_point = None
-            return
-        self._last_point = self.mapper.to_screen(contact.x_norm, contact.y_norm)
-        self._last_touch_time = time.monotonic()
+    def attach_reader(self, reader):
+        self._reader = reader
 
     def start(self):
-        """Install event tap and start run-loop thread."""
-        mask = (
-            CGEventMaskBit(kCGEventMouseMoved)     |
-            CGEventMaskBit(kCGEventLeftMouseDown)  |
-            CGEventMaskBit(kCGEventLeftMouseUp)    |
-            CGEventMaskBit(kCGEventRightMouseDown) |
-            CGEventMaskBit(kCGEventRightMouseUp)
-        )
-
-        self._tap = CGEventTapCreate(
-            kCGHIDEventTap,
-            kCGHeadInsertEventTap,
-            kCGEventTapOptionDefault,
-            mask,
-            self._tap_callback,
-            None,
-        )
-
-        if self._tap is None:
-            raise PermissionError(
-                "Could not create CGEventTap. "
-                "Grant Accessibility permission to this terminal / Python in "
-                "System Settings → Privacy & Security → Accessibility, then restart."
-            )
-
         self._active = True
-        self._thread = threading.Thread(target=self._run_loop, daemon=True)
+        self._thread = threading.Thread(
+            target=self._loop, daemon=True, name="TouchInject")
         self._thread.start()
-        log.info("Event tap installed.")
+        log.info("Touch injector started.")
 
     def stop(self):
         self._active = False
-        if self._tap:
-            CGEventTapEnable(self._tap, False)
-        if self._loop:
-            CFRunLoopStop(self._loop)
 
-    # ------------------------------------------------------------------
-    # Internal
-    # ------------------------------------------------------------------
+    def _post(self, event_type: int, pt: _CGPoint):
+        ev = _QZ.CGEventCreateMouseEvent(None, event_type, pt, kCGMouseButtonLeft)
+        if ev:
+            _QZ.CGEventPost(kCGHIDEventTap, ev)
+            _QZ.CFRelease(ev)
 
-    def _run_loop(self):
-        source = CGRunLoopSourceCreate(None, 0, self._tap)
-        self._loop = CFRunLoopGetCurrent()
-        CFRunLoopAddSource(self._loop, source, kCFRunLoopDefaultMode)
-        CGEventTapEnable(self._tap, True)
-        CFRunLoopRun()
+    def _loop(self):
+        was_touching = False
 
-    def _tap_callback(self, proxy, event_type, event, user_info):
-        """
-        Called for every intercepted CGEvent on the HID event tap.
-        If we have a recent touch position, replace the event location.
-        """
-        if not self._active:
-            return event
+        while self._active:
+            if self._reader is None:
+                time.sleep(0.01)
+                continue
 
-        point = self._last_point
-        if point is None:
-            return event
+            report = self._reader.read(timeout=0.02)
+            if report is None:
+                continue
 
-        # Only remap if touch was recent (avoids stale remap after finger lifts)
-        age = time.monotonic() - self._last_touch_time
-        if age > 0.15:  # 150 ms
-            return event
+            pt = self._map(report.x_norm, report.y_norm)
 
-        CGEventSetLocation(event, point)
-        return event
+            if report.touch:
+                # Always warp cursor to correct position
+                _QZ.CGWarpMouseCursorPosition(pt)
+
+                if not was_touching:
+                    # Touch down — post a left mouse down
+                    time.sleep(0.008)   # let warp settle first
+                    self._post(kCGEventLeftMouseDown, pt)
+                    log.debug("DOWN → (%.1f, %.1f)", pt.x, pt.y)
+                else:
+                    # Drag
+                    self._post(kCGEventMouseMoved, pt)
+
+                was_touching = True
+
+            elif was_touching:
+                # Touch up — post left mouse up
+                self._post(kCGEventLeftMouseUp, pt)
+                log.debug("UP   → (%.1f, %.1f)", pt.x, pt.y)
+                was_touching = False
+
+    def _map(self, x_norm: float, y_norm: float) -> _CGPoint:
+        pt = self.mapper.to_screen(x_norm, y_norm)
+        return _CGPoint(x=pt.x, y=pt.y)

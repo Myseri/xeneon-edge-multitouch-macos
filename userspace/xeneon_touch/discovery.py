@@ -58,8 +58,9 @@ def find_xeneon_display() -> Tuple[Optional[object], Optional[int]]:
         name = str(screen.localizedName()) if hasattr(screen, "localizedName") else ""
         for hint in DISPLAY_NAME_HINTS:
             if hint.upper() in name.upper():
-                frame      = screen.frame()
                 display_id = _nsscreen_to_cgdisplay(screen)
+                # Use CGDisplayBounds — same coordinate system as CGWarpMouseCursorPosition
+                frame      = Quartz.CGDisplayBounds(display_id)
                 log.info(
                     "Found Xeneon Edge: '%s' id=%s origin=(%.0f,%.0f) size=%.0fx%.0f",
                     name, display_id,

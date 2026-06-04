@@ -4,42 +4,20 @@ import logging
 import signal
 import sys
 import time
-from typing import Optional
 
-from .config import VID, PID, TOUCH_X_MAX, TOUCH_Y_MAX
 from .discovery import find_xeneon_display
-from .event_reader import IOHIDEventReader, TouchContact
 from .display import DisplayMapper
+from .hid_mouse import HIDMouseReader
 from .injector import TouchInjector
 
 log = logging.getLogger(__name__)
 
 
-def _normalise(contact: TouchContact) -> TouchContact:
-    """
-    Convert raw IOHIDEvent X/Y to 0.0–1.0 normalised coords.
-
-    IOHIDEventGetFloatValue for digitizer X/Y can return:
-      - 0.0–1.0  (already normalised — macOS >= 12 for some drivers)
-      - 0–32767  (logical units from the HID report descriptor)
-
-    We detect which case we're in and normalise accordingly.
-    """
-    x, y = contact.x, contact.y
-    # If values are > 1.0 they must be logical units
-    if x > 1.0 or y > 1.0:
-        x = max(0.0, min(1.0, x / TOUCH_X_MAX))
-        y = max(0.0, min(1.0, y / TOUCH_Y_MAX))
-    return TouchContact(x=x, y=y,
-                        tip_switch=contact.tip_switch,
-                        contact_id=contact.contact_id)
-
-
 class XeneonTouchDaemon:
     def __init__(self):
         self._running  = False
-        self._reader: Optional[IOHIDEventReader] = None
-        self._injector: Optional[TouchInjector]  = None
+        self._reader   = None
+        self._injector = None
 
     def run(self):
         log.info("xeneon-touch starting…")
@@ -49,38 +27,29 @@ class XeneonTouchDaemon:
             log.error("Xeneon Edge display not found. Exiting.")
             sys.exit(1)
 
+        log.info("Xeneon Edge display found: %s", bounds)
+
         mapper   = DisplayMapper(bounds)
         injector = TouchInjector(mapper)
 
-        try:
-            injector.start()
-        except PermissionError as e:
-            log.error("%s", e)
-            sys.exit(1)
+        reader = HIDMouseReader()
+        reader.start()
+
+        injector.attach_reader(reader)
+        injector.start()
 
         self._injector = injector
+        self._reader   = reader
+        self._running  = True
 
-        reader = IOHIDEventReader(vendor_id=VID, product_id=PID)
-        reader.start()
-        self._reader = reader
-
-        self._running = True
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, self._handle_signal)
 
-        log.info("Running — touch the Xeneon Edge screen to test.")
+        log.info("Running — touch the Xeneon Edge screen.")
 
         try:
             while self._running:
-                contacts = reader.read(timeout=0.05)
-                if not contacts:
-                    continue
-
-                # Pick the primary (first active) finger
-                active = next(
-                    (_normalise(c) for c in contacts if c.tip_switch), None)
-                injector.update_touch(active)
-
+                time.sleep(0.5)
         finally:
             self._cleanup()
 
