@@ -20,30 +20,33 @@
     <string>DEXT</string>
 
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>2.1</string>
 
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>18</string>
 
-    <!--
-        IOKitPersonalities: match on Interface 0 of the WCH touch controller.
-        We match at the IOUSBHostInterface level so we get the device BEFORE
-        AppleUserHIDDevice does, then use IOUserUSBHostHIDDevice to provide
-        the full HID stack ourselves.
-
-        IOProbeScore 200000 outbids Apple's default HID driver (~90000).
-    -->
     <key>IOKitPersonalities</key>
     <dict>
 
-        <key>XeneonEdgeTouchDigitizer</key>
+        <key>XeneonEdgeTouchUSB</key>
         <dict>
-            <!-- Required DriverKit keys -->
             <key>CFBundleIdentifier</key>
             <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 
+            <!--
+                For HID dexts the kernel-side IOClass must be AppleUserHIDDevice
+                (IOHIDFamily's kernel half of the HID device stack) — mirroring
+                Apple's own AppleUserUSBHostHIDDevice personalities in
+                com.apple.AppleUserHIDDrivers.dext. CFBundleIdentifierKernel
+                names the kext providing the IOClass (IOHIDFamily), NOT the
+                provider's family. With generic IOUserService here,
+                IOUserUSBHostHIDDevice::Start fails with kIOReturnUnsupported.
+            -->
+            <key>CFBundleIdentifierKernel</key>
+            <string>com.apple.iokit.IOHIDFamily</string>
+
             <key>IOClass</key>
-            <string>IOUserService</string>
+            <string>AppleUserHIDDevice</string>
 
             <key>IOUserClass</key>
             <string>XeneonTouchDriver</string>
@@ -51,28 +54,37 @@
             <key>IOUserServerName</key>
             <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 
-            <!-- Match on the USB interface, not the HID layer -->
             <key>IOProviderClass</key>
             <string>IOUSBHostInterface</string>
 
-            <!-- WCH touch controller -->
+            <!-- All four keys required for IOUSBHostInterface matching -->
             <key>idVendor</key>
-            <integer>10176</integer>   <!-- 0x27C0 -->
+            <integer>10176</integer>
 
             <key>idProduct</key>
-            <integer>2137</integer>    <!-- 0x0859 -->
+            <integer>2137</integer>
 
-            <!-- Interface 0 is the digitizer (HID class 3, usage page 13) -->
+            <!-- Configuration 1 is standard for this device -->
+            <key>bConfigurationValue</key>
+            <integer>1</integer>
+
+            <!-- Interface 0 = WCH touch digitizer -->
             <key>bInterfaceNumber</key>
             <integer>0</integer>
 
-            <!-- Outbid Apple's HID driver -->
             <key>IOProbeScore</key>
-            <integer>200000</integer>
+            <integer>100000</integer>
 
-            <!-- Only match the HID class interface -->
-            <key>bInterfaceClass</key>
-            <integer>3</integer>
+            <!--
+                Disable interrupt-pipe idling (USB suspend). Mirrors Apple's
+                own AppleUSBKeyboard personality. macOS idles HID pipes far
+                more aggressively than Windows; cheap touch firmware often
+                mishandles suspend — symptoms match ours exactly: control
+                transfers fine, no interrupt stream, periodic self-resets.
+            -->
+            <key>kUSBHIDDeviceIdlePolicy</key>
+            <integer>0</integer>
+
         </dict>
 
     </dict>

@@ -252,7 +252,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ -d \"${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}\" ]; then\n    codesign --force --sign - \\\n      --entitlements \"${SRCROOT}/XeneonTouchDriver/XeneonTouchDriver.entitlements\" \\\n      \"${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}\"\nfi\n";
+			shellScript = "# Signing handled by Xcode automatic signing\n";
 		};
 		19FE306E2FD0F0AF00744E39 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -269,7 +269,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "APP=\"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app\"\nDEXT=\"${APP}/Contents/Library/SystemExtensions/com.jonathanmartin.XeneonTouchDriverApp.XeneonTouchDriver.dext\"\nENTITLEMENTS_APP=\"${SRCROOT}/XeneonTouchDriverApp/XeneonTouchDriverApp.entitlements\"\nENTITLEMENTS_DEXT=\"${SRCROOT}/XeneonTouchDriver/XeneonTouchDriver.entitlements\"\n\n# Sign debug dylib first\nfind \"$APP\" -name \"*.debug.dylib\" -exec codesign --force --sign \"XeneonDext\" {} \\;\n\n# Sign the dext\nif [ -d \"$DEXT\" ]; then\n    codesign --force --sign \"XeneonDext\" --entitlements \"$ENTITLEMENTS_DEXT\" \"$DEXT\"\nfi\n\n# Sign the app\ncodesign --force --sign \"XeneonDext\" --entitlements \"$ENTITLEMENTS_APP\" \"$APP\"\n";
+			shellScript = "# Signing handled by Xcode automatic signing\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -332,7 +332,6 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGN_IDENTITY = XeneonDext;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = S27RQRV4GX;
@@ -397,7 +396,6 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGN_IDENTITY = XeneonDext;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = S27RQRV4GX;
@@ -427,14 +425,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_ENTITLEMENTS = XeneonTouchDriverApp/XeneonTouchDriverApp.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = XeneonDext;
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = S27RQRV4GX;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
@@ -454,7 +449,6 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jonathanmartin.XeneonTouchDriverApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
@@ -478,15 +472,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_ENTITLEMENTS = XeneonTouchDriverApp/XeneonTouchDriverApp.entitlements;
-				CODE_SIGN_IDENTITY = XeneonDext;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = XeneonDext;
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = S27RQRV4GX;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
@@ -506,7 +496,6 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jonathanmartin.XeneonTouchDriverApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
@@ -528,12 +517,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
-				CODE_SIGN_IDENTITY = XeneonDext;
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_ENTITLEMENTS = XeneonTouchDriver/XeneonTouchDriver.entitlements;
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "-";
+				DEVELOPMENT_TEAM = S27RQRV4GX;
 				DRIVERKIT_DEPLOYMENT_TARGET = 21.6;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -544,9 +531,13 @@
 				HEADER_SEARCH_PATHS = "$(DERIVED_SOURCES_DIR)/$(PRODUCT_BUNDLE_IDENTIFIER)";
 				INFOPLIST_FILE = XeneonTouchDriver/Info.plist;
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					USBDriverKit,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.jonathanmartin.XeneonTouchDriverApp.XeneonTouchDriver;
 				PRODUCT_NAME = "$(inherited)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				RUN_CLANG_STATIC_ANALYZER = NO;
 				SDKROOT = driverkit;
 				SKIP_INSTALL = YES;
@@ -562,12 +553,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
-				CODE_SIGN_IDENTITY = XeneonDext;
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_ENTITLEMENTS = XeneonTouchDriver/XeneonTouchDriver.entitlements;
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "-";
+				DEVELOPMENT_TEAM = S27RQRV4GX;
 				DRIVERKIT_DEPLOYMENT_TARGET = 21.6;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -578,9 +567,13 @@
 				HEADER_SEARCH_PATHS = "$(DERIVED_SOURCES_DIR)/$(PRODUCT_BUNDLE_IDENTIFIER)";
 				INFOPLIST_FILE = XeneonTouchDriver/Info.plist;
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					USBDriverKit,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.jonathanmartin.XeneonTouchDriverApp.XeneonTouchDriver;
 				PRODUCT_NAME = "$(inherited)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				RUN_CLANG_STATIC_ANALYZER = NO;
 				SDKROOT = driverkit;
 				SKIP_INSTALL = YES;

@@ -68,7 +68,7 @@ def dump_interface(path: str, usage_page: int, label: str, duration: int = 30):
     try:
         dev = hid.device()
         dev.open_path(path)
-        dev.nonblocking = False
+        dev.set_nonblocking(0)
     except Exception as e:
         print(f"{ANSI_RED}Could not open device: {e}{ANSI_RESET}")
         print("Try running with sudo, or check that UPDD is not running.\n")
@@ -102,7 +102,7 @@ def dump_interface(path: str, usage_page: int, label: str, duration: int = 30):
     except KeyboardInterrupt:
         pass
     finally:
-        reader.stop()
+        dev.close()
 
     print(f"\n{ANSI_CYAN}Read {report_count} reports in {time.time()-start:.1f}s{ANSI_RESET}")
     if report_count > 0:
@@ -118,7 +118,7 @@ def try_parse_as_digitizer(path: str):
         from xeneon_touch.parser import TouchParser
         dev = hid.device()
         dev.open_path(path)
-        dev.nonblocking = False
+        dev.set_nonblocking(0)
         parser = TouchParser()
         count = 0
         start = time.time()
@@ -136,7 +136,7 @@ def try_parse_as_digitizer(path: str):
                           f"y={c.y:5d} ({c.y_norm:.3f})  "
                           f"tip={c.tip_switch}")
                     count += 1
-        reader2.stop()
+        dev.close()
         if count == 0:
             print("  No active touch contacts detected in 15s.")
             print("  Try touching the screen, or the report format may need updating.")

@@ -165,11 +165,9 @@ class IOHIDEventReader:
                       "may need Accessibility or Input Monitoring permission")
             return
 
-        # Match device by VID + PID
-        d = _CF.CFDictionaryCreateMutable(None, 0, None, None)
-        _CF.CFDictionarySetValue(d, _cfstr("VendorID"),  _cfnum(self._vid))
-        _CF.CFDictionarySetValue(d, _cfstr("ProductID"), _cfnum(self._pid))
-        _IOKit.IOHIDEventSystemClientSetMatching(self._client, d)
+        # NOTE: IOHIDEventSystemClientSetMatching with a plain VID/PID dict
+        # silently drops all events on macOS — do NOT call it here.
+        # We receive all digitizer events and filter by VID/PID in the callback.
 
         _IOKit.IOHIDEventSystemClientRegisterEventCallback(
             self._client, self._cb, None, None)
@@ -179,7 +177,8 @@ class IOHIDEventReader:
             self._client, self._runloop, _kDefaultMode)
 
         log.info("IOHIDEventSystemClient (passive) started — "
-                 "VID=0x%04X PID=0x%04X", self._vid, self._pid)
+                 "filtering for VID=0x%04X PID=0x%04X in callback",
+                 self._vid, self._pid)
         _CF.CFRunLoopRun()
         log.info("IOHIDEventSystemClient stopped.")
 

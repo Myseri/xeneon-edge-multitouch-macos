@@ -5,11 +5,28 @@
 <dict>
     <key>com.apple.developer.driverkit</key>
     <true/>
+
+    <!--
+        Development profile has: [{idVendor: "*"}]. Per Apple DTS, managed
+        entitlements are matched by EXACT VALUE — the dev profile's "*" is
+        satisfied only by claiming "*" itself, not a concrete vendor ID.
+        (Claiming <integer>10176</integer> caused taskgated "Unsatisfied
+        entitlements: com.apple.developer.driverkit.transport.usb".)
+        Device filtering still happens via the Info.plist IOKit personality
+        (idVendor 10176 / idProduct 2137). For distribution, switch this to
+        the concrete vendor ID granted in the distribution profile.
+        Ref: https://developer.apple.com/forums/thread/798049
+    -->
     <key>com.apple.developer.driverkit.transport.usb</key>
-    <true/>
+    <array>
+        <dict>
+            <key>idVendor</key>
+            <string>*</string>
+        </dict>
+    </array>
+
     <key>com.apple.developer.driverkit.family.hid.device</key>
     <true/>
-    <key>com.apple.developer.driverkit.family.hid.eventservice</key>
-    <true/>
+
 </dict>
 </plist>

@@ -5,10 +5,12 @@ import signal
 import sys
 import time
 
+from .config import VID, PID
 from .discovery import find_xeneon_display
 from .display import DisplayMapper
-from .hid_mouse import HIDMouseReader
+from .event_reader import IOHIDEventReader
 from .injector import TouchInjector
+from .mode_switch import send_mode_switch
 
 log = logging.getLogger(__name__)
 
@@ -29,17 +31,24 @@ class XeneonTouchDaemon:
 
         log.info("Xeneon Edge display found: %s", bounds)
 
+        # Switch device to multitouch mode before opening the event reader
+        log.info("Sending mode switch (Input Mode=2, Max Contacts=10)…")
+        if not send_mode_switch():
+            log.warning(
+                "Mode switch failed — device may stay in single-touch mode. "
+                "Continuing anyway."
+            )
+
         mapper   = DisplayMapper(bounds)
+        reader   = IOHIDEventReader(VID, PID)
         injector = TouchInjector(mapper)
 
-        reader = HIDMouseReader()
         reader.start()
-
         injector.attach_reader(reader)
         injector.start()
 
-        self._injector = injector
         self._reader   = reader
+        self._injector = injector
         self._running  = True
 
         for sig in (signal.SIGINT, signal.SIGTERM):

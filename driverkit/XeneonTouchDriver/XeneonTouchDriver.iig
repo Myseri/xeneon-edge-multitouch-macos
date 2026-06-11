@@ -1,6 +1,15 @@
 #ifndef XeneonTouchDriver_h
 #define XeneonTouchDriver_h
 
+// Matches IOUSBHostInterface (VID 0x27C0 / PID 0x0859, interface 0) via
+// IOUserUSBHostHIDDevice. Kernel-side IOClass is AppleUserHIDDevice
+// (IOHIDFamily) — see Info.plist. v9 confirmed: super Start succeeds,
+// IOHIDInterface publishes, AppleUserHIDEventDriver opens us.
+//
+// v10: send Input Mode = 2 feature report at Start to unlock multitouch,
+// and hex-dump incoming reports in handleReport to verify the real report
+// format before trusting any parser (firmware serves different descriptors
+// per-OS, so the Windows-observed layout may not match).
 #include <HIDDriverKit/IOUserUSBHostHIDDevice.iig>
 
 class XeneonTouchDriver : public IOUserUSBHostHIDDevice
@@ -8,6 +17,21 @@ class XeneonTouchDriver : public IOUserUSBHostHIDDevice
 public:
     virtual kern_return_t Start(IOService * provider) override;
     virtual kern_return_t Stop(IOService * provider) override;
+
+    // LOCALONLY — runs entirely in the dext, exact signature from
+    // HIDDriverKit/IOHIDDevice.iig. Base class calls this for every input
+    // report read from the interrupt pipe; we log then forward to super.
+    virtual kern_return_t handleReport(uint64_t            timestamp,
+                                       IOMemoryDescriptor  *report,
+                                       uint32_t            reportLength,
+                                       IOHIDReportType     reportType = kIOHIDReportTypeInput,
+                                       IOOptionBits        options    = 0) LOCALONLY override;
+
+protected:
+    // v13 diagnostic: log whether the base class managed to set up the
+    // interrupt IN read at all. If this fails, zero input reports is a
+    // pipe problem, not a firmware-mode problem.
+    virtual kern_return_t initInputReport() LOCALONLY override;
 };
 
 #endif /* XeneonTouchDriver_h */
