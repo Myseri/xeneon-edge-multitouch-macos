@@ -105,11 +105,11 @@ static kern_return_t ctrlIn(IOUSBHostInterface *iface, uint8_t bmReq,
     return ret;
 }
 
+// ── Start ─────────────────────────────────────────────────────────────────────
 kern_return_t XeneonTouchDriver::Start_Impl(IOService *provider)
 {
-    LOG(">>> Start_Impl (v17 - In-Line Handshake)");
+    LOG(">>> Start_Impl (v17)");
 
-    // 1. Let the parent class execute its native matching and open the provider
     kern_return_t ret = Start(provider, SUPERDISPATCH);
     if (ret != kIOReturnSuccess) {
         LOG("Super Start failed 0x%08X", ret);
@@ -122,137 +122,81 @@ kern_return_t XeneonTouchDriver::Start_Impl(IOService *provider)
         RegisterService();
         return kIOReturnSuccess;
     }
-    LOG("Super Start OK. Hardware provider claimed safely.");
+    LOG("Super Start OK");
 
-    // ── 2. EXECUTE YOUR ENTIRE WINDOWS REPLAY SEQUENCE HERE ──────────────────
-    // The parent class has opened the interface, meaning the control endpoints
-    // are wide open and safe for us to write to without hitting exclusive locks.
-    
+    // ── v13 diagnostics: what does interface 0 actually look like? ────────
+    const IOUSBConfigurationDescriptor *cfg = iface->CopyConfigurationDescriptor();
+    const IOUSBInterfaceDescriptor *ifd =
+        cfg ? iface->GetInterfaceDescriptor(cfg) : nullptr;
+    if (ifd) {
+        LOG("ifaceDesc: num=%u class=%u subclass=%u protocol=%u endpoints=%u altSetting=%u",
+            ifd->bInterfaceNumber, ifd->bInterfaceClass, ifd->bInterfaceSubClass,
+            ifd->bInterfaceProtocol, ifd->bNumEndpoints, ifd->bAlternateSetting);
+
+        const IOUSBEndpointDescriptor *ep = nullptr;
+        while ((ep = IOUSBGetNextEndpointDescriptor(
+                    cfg, ifd,
+                    reinterpret_cast<const IOUSBDescriptorHeader *>(ep)))) {
+            LOG("endpoint addr=0x%02x attr=0x%02x maxPacket=%u interval=%u",
+                ep->bEndpointAddress, ep->bmAttributes,
+                (uint16_t)(ep->wMaxPacketSize), ep->bInterval);
+        }
+
+        // Boot-subclass interfaces default to boot protocol (mouse-style
+        // reports) until the host selects report protocol. If that's our
+        // situation, fix it.
+        if (ifd->bInterfaceSubClass == 1) {
+            kern_return_t pr = setProtocol(1 /* report protocol */);
+            LOG("boot subclass detected — SET_PROTOCOL(report) -> 0x%08X", pr);
+        }
+    } else {
+        LOG("could not read interface descriptor");
+    }
+    if (cfg) IOUSBHostFreeDescriptor(cfg);
+
+    // ── v17: COMPLETE byte-exact replay of Windows capture pkts 78-113 ────
+    // Hypothesis: the firmware's unlock gate requires the full Windows
+    // interrogation IN ORDER — notably reading the report descriptors of
+    // ALL THREE interfaces before the mode write. On Windows the order is:
+    //   3×(GET_STRING idx2 len4, len24) → SET_IDLE(0) → READ RD0(768) →
+    //   SET_IDLE(1) → READ RD1(102) → SET_IDLE(2) → READ RD2(144) →
+    //   GET_STRING idx2 len514 → GET_REPORT 0x0A(2) → SET_REPORT 0x21
+    // Our previous builds fired the unlock before Apple's drivers had read
+    // RD1/RD2 — possibly why the (accepted) mode write never engaged.
+
+    // 3× double string fetch, Windows-style (wValue 0x0302, lang 0x0409)
     for (int i = 0; i < 3; i++) {
         ctrlIn(iface, 0x80, 0x06, 0x0302, 0x0409, 4,   "GET_STR2 len4");
         ctrlIn(iface, 0x80, 0x06, 0x0302, 0x0409, 24,  "GET_STR2 len24");
     }
-
+    // idle + report-descriptor read, per interface, in capture order
     static const uint16_t rdLen[3] = { 768, 102, 144 };
     for (uint16_t ifnum = 0; ifnum <= 2; ifnum++) {
         uint16_t xfer = 0;
-        iface->DeviceRequest(0x21, 0x0A, 0x0000, ifnum, 0, nullptr, &xfer, 1000);
+        kern_return_t hr = iface->DeviceRequest(0x21, 0x0A, 0x0000, ifnum, 0,
+                                                (IOMemoryDescriptor *)nullptr,
+                                                &xfer, 1000);
+        LOG("SET_IDLE iface %u -> 0x%08X", ifnum, hr);
         char tag[16] = { 'R', 'D', (char)('0' + ifnum), 0 };
         ctrlIn(iface, 0x81, 0x06, 0x2200, ifnum, rdLen[ifnum], tag);
     }
 
+    // trailing oversized string fetch (capture pkt 108, wLength 514)
     ctrlIn(iface, 0x80, 0x06, 0x0302, 0x0409, 514, "GET_STR2 len514");
-    ctrlIn(iface, 0xA1, kHIDRequestGetReport, kHIDReportTypeFeatureWValue | kReportIDMaxContacts, kInterfaceNumber, 2, "GET_REPORT 0x0A");
 
+    // GET_REPORT Feature 0x0A (capture pkt 110)
+    ctrlIn(iface, 0xA1, kHIDRequestGetReport,
+           kHIDReportTypeFeatureWValue | kReportIDMaxContacts,
+           kInterfaceNumber, 2, "GET_REPORT 0x0A");
+
+    // SET_REPORT Feature 0x21 = 21 02 00 (capture pkt 112)
     const uint8_t modeFramed[] = { 0x21, 0x02, 0x00 };
     sendFeatureUSB(iface, kReportIDInputMode, modeFramed, sizeof(modeFramed));
 
-    LOG("Windows initialization replay complete. Hardware mode switched.");
-
-    // ── 3. FORCE THE DRIVERKIT HID ENGINE TO RE-PARSE THE STREAM ──────────────
-    // Because the hardware was changed from single-touch to multi-touch *after*
-    // the parent class initialized, we must manually tickle the input report loop
-    // to pick up the updated multi-touch descriptors.
-    ret = initInputReport();
-    LOG("Manual initInputReport re-trigger -> 0x%08X", ret);
-
+    LOG("Mode switch done — watching for input reports");
     RegisterService();
     return kIOReturnSuccess;
 }
-
-// ── Start ─────────────────────────────────────────────────────────────────────
-//kern_return_t XeneonTouchDriver::Start_Impl(IOService *provider)
-//{
-//    LOG(">>> Start_Impl (v17)");
-//
-//    kern_return_t ret = Start(provider, SUPERDISPATCH);
-//    if (ret != kIOReturnSuccess) {
-//        LOG("Super Start failed 0x%08X", ret);
-//        return ret;
-//    }
-//
-//    IOUSBHostInterface *iface = OSDynamicCast(IOUSBHostInterface, provider);
-//    if (!iface) {
-//        LOG("provider is not IOUSBHostInterface?!");
-//        RegisterService();
-//        return kIOReturnSuccess;
-//    }
-//    LOG("Super Start OK");
-//
-//    // ── v13 diagnostics: what does interface 0 actually look like? ────────
-//    const IOUSBConfigurationDescriptor *cfg = iface->CopyConfigurationDescriptor();
-//    const IOUSBInterfaceDescriptor *ifd =
-//        cfg ? iface->GetInterfaceDescriptor(cfg) : nullptr;
-//    if (ifd) {
-//        LOG("ifaceDesc: num=%u class=%u subclass=%u protocol=%u endpoints=%u altSetting=%u",
-//            ifd->bInterfaceNumber, ifd->bInterfaceClass, ifd->bInterfaceSubClass,
-//            ifd->bInterfaceProtocol, ifd->bNumEndpoints, ifd->bAlternateSetting);
-//
-//        const IOUSBEndpointDescriptor *ep = nullptr;
-//        while ((ep = IOUSBGetNextEndpointDescriptor(
-//                    cfg, ifd,
-//                    reinterpret_cast<const IOUSBDescriptorHeader *>(ep)))) {
-//            LOG("endpoint addr=0x%02x attr=0x%02x maxPacket=%u interval=%u",
-//                ep->bEndpointAddress, ep->bmAttributes,
-//                (uint16_t)(ep->wMaxPacketSize), ep->bInterval);
-//        }
-//
-//        // Boot-subclass interfaces default to boot protocol (mouse-style
-//        // reports) until the host selects report protocol. If that's our
-//        // situation, fix it.
-//        if (ifd->bInterfaceSubClass == 1) {
-//            kern_return_t pr = setProtocol(1 /* report protocol */);
-//            LOG("boot subclass detected — SET_PROTOCOL(report) -> 0x%08X", pr);
-//        }
-//    } else {
-//        LOG("could not read interface descriptor");
-//    }
-//    if (cfg) IOUSBHostFreeDescriptor(cfg);
-//
-//    // ── v17: COMPLETE byte-exact replay of Windows capture pkts 78-113 ────
-//    // Hypothesis: the firmware's unlock gate requires the full Windows
-//    // interrogation IN ORDER — notably reading the report descriptors of
-//    // ALL THREE interfaces before the mode write. On Windows the order is:
-//    //   3×(GET_STRING idx2 len4, len24) → SET_IDLE(0) → READ RD0(768) →
-//    //   SET_IDLE(1) → READ RD1(102) → SET_IDLE(2) → READ RD2(144) →
-//    //   GET_STRING idx2 len514 → GET_REPORT 0x0A(2) → SET_REPORT 0x21
-//    // Our previous builds fired the unlock before Apple's drivers had read
-//    // RD1/RD2 — possibly why the (accepted) mode write never engaged.
-//
-//    // 3× double string fetch, Windows-style (wValue 0x0302, lang 0x0409)
-//    for (int i = 0; i < 3; i++) {
-//        ctrlIn(iface, 0x80, 0x06, 0x0302, 0x0409, 4,   "GET_STR2 len4");
-//        ctrlIn(iface, 0x80, 0x06, 0x0302, 0x0409, 24,  "GET_STR2 len24");
-//    }
-//
-//    // idle + report-descriptor read, per interface, in capture order
-//    static const uint16_t rdLen[3] = { 768, 102, 144 };
-//    for (uint16_t ifnum = 0; ifnum <= 2; ifnum++) {
-//        uint16_t xfer = 0;
-//        kern_return_t hr = iface->DeviceRequest(0x21, 0x0A, 0x0000, ifnum, 0,
-//                                                (IOMemoryDescriptor *)nullptr,
-//                                                &xfer, 1000);
-//        LOG("SET_IDLE iface %u -> 0x%08X", ifnum, hr);
-//        char tag[16] = { 'R', 'D', (char)('0' + ifnum), 0 };
-//        ctrlIn(iface, 0x81, 0x06, 0x2200, ifnum, rdLen[ifnum], tag);
-//    }
-//
-//    // trailing oversized string fetch (capture pkt 108, wLength 514)
-//    ctrlIn(iface, 0x80, 0x06, 0x0302, 0x0409, 514, "GET_STR2 len514");
-//
-//    // GET_REPORT Feature 0x0A (capture pkt 110)
-//    ctrlIn(iface, 0xA1, kHIDRequestGetReport,
-//           kHIDReportTypeFeatureWValue | kReportIDMaxContacts,
-//           kInterfaceNumber, 2, "GET_REPORT 0x0A");
-//
-//    // SET_REPORT Feature 0x21 = 21 02 00 (capture pkt 112)
-//    const uint8_t modeFramed[] = { 0x21, 0x02, 0x00 };
-//    sendFeatureUSB(iface, kReportIDInputMode, modeFramed, sizeof(modeFramed));
-//
-//    LOG("Mode switch done — watching for input reports");
-//    RegisterService();
-//    return kIOReturnSuccess;
-//}
 
 // ── Stop ──────────────────────────────────────────────────────────────────────
 kern_return_t XeneonTouchDriver::Stop_Impl(IOService *provider)
