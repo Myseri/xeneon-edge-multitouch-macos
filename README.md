@@ -1,69 +1,79 @@
 # xeneon-edge-multitouch-macos
 
-macOS touch driver for the **Corsair Xeneon Edge** (21:9 USB-C touchscreen monitor).
+macOS touch support for the **Corsair Xeneon Edge** (14.5" 32:9 USB-C touchscreen).
 
-This project brings proper touch support to the Xeneon Edge on macOS — fixing wrong-monitor clicks and working toward full 5-point multitouch, with no kernel extensions, no UPDD, and no phone-home.
+Working single-touch with correct display mapping today, plus the most complete
+public investigation into why **multitouch does not work on macOS** with this
+device — including a working DriverKit driver, a Windows USB protocol capture
+of the multitouch unlock sequence, and wire-level proof that the firmware
+refuses to honor it on macOS hosts.
+
+**TL;DR: this is a firmware decision, not a missing driver.** See
+[docs/DIAGNOSTIC_LOG.md](docs/DIAGNOSTIC_LOG.md) for the full evidence.
 
 ---
 
 ## The Problem
 
-The Xeneon Edge exposes a WingCoolTouch USB HID controller (`VID 0x27C0 PID 0x0859`) with two interfaces:
+The Xeneon Edge exposes a WingCoolTouch USB controller (`VID 0x27C0 PID 0x0859`)
+with three interfaces:
 
-| Interface | Usage | macOS behaviour |
-|-----------|-------|----------------|
-| Digitizer (HID page 0x0D) | 10-finger multitouch, absolute coordinates | Claimed by `AppleUserHIDDevice` — no usable output |
-| Mouse (HID page 0x01) | Single touch, relative pointer | Works, but clicks land on whichever display is currently active — not the Xeneon Edge |
+| Interface | Function | macOS behaviour |
+|-----------|----------|-----------------|
+| 0 — HID digitizer (page 0x0D) | 10-finger multitouch, absolute coords, report 0x0D | **Completely silent** — never sends a single report |
+| 1 — vendor channel (page 0xFF0A) | 64-byte private protocol (reports 0x50/0x51) | Unused |
+| 2 — HID mouse (page 0x01) | Single touch as relative pointer, report 0x07 | Works, but clicks land on the active display |
 
-The result: touch "works" but clicks land on the wrong monitor.
-
----
-
-## This Project
-
-Two components, tackling the problem at different levels:
-
-### `userspace/` — Python single-touch daemon (works today)
-
-Reads the digitizer's absolute coordinates via HID and injects corrected click events at the right position on the Xeneon Edge. No signing required, installs in seconds.
-
-**What it does:**
-- Fixes wrong-monitor clicks
-- Maps touch coordinates correctly to the Xeneon Edge display
-- Runs as a background LaunchAgent
-
-**What it doesn't do (yet):**
-- Multitouch gestures (scroll, pinch, etc.)
-
-→ [userspace/README.md](userspace/README.md)
-
-### `driverkit/` — DriverKit extension (multitouch, pending signing)
-
-A proper macOS DriverKit driver that claims Interface 0 before `AppleUserHIDDevice`, sends the HID Input Mode = 2 feature report to activate multitouch, and dispatches 5-point digitizer events to the OS.
-
-**Current state:** The driver correctly matches the hardware (`IODEXTMatchCount=1`, outbids Apple's driver at `IOProbeScore 200000 vs 50001`). The final step — launching the user server process — requires a real Apple TeamIdentifier, which requires the Apple Developer Program.
-
-→ [driverkit/README.md](driverkit/README.md)
+On Windows, the OS sends a standard HID feature report
+(`SET_REPORT Feature 0x21 = Input Mode 2`) and interface 0 starts streaming
+10-finger multitouch immediately. We captured that exact exchange
+([docs/xeneon_win11_unlock.pcapng](docs/xeneon_win11_unlock.pcapng)) and
+replayed it **byte-for-byte** from a working macOS DriverKit driver. Every
+control transfer succeeds with responses identical to Windows'. The firmware
+accepts the mode switch — and never streams. Three independent macOS stacks
+(this driver, Apple's HID stack, and the commercial UPDD driver with exclusive
+device access) fail identically. The firmware appears to fingerprint the host
+OS during enumeration, below anything host software can influence.
 
 ---
 
-## Hardware
+## What's In This Repo
 
-```
-Monitor:    Corsair Xeneon Edge 14.5" (CC-9011306-WW)
-Touch IC:   WingCoolTouch / WCH (Nanjing Qinheng)
-VID/PID:    0x27C0 / 0x0859
-Interface:  USB-C (touch data) + HDMI or USB-C (display)
+### `userspace/` — single-touch daemon (works today)
 
-HID descriptor (Interface 0, confirmed):
-  Report 0x0D — 10-finger multitouch
-    X: 0–16383  (216.9 mm physical)
-    Y: 0–9599   (90.6 mm physical)
-  Report 0x21 — Input Mode feature (0=mouse, 1=single-touch, 2=multitouch)
-  Report 0x0A — Max Contacts feature
-```
+Python daemon that reads the touch data macOS *does* get and injects clicks at
+the correct absolute position on the Edge's display. No kernel code, no
+signing, installs in seconds. → [userspace/README.md](userspace/README.md)
 
-**Key finding:** The firmware serves a different HID descriptor on macOS vs Windows. On Windows, 5-point multitouch works natively with no drivers. On macOS, the firmware defaults to single-touch mode. The DriverKit driver sends Report 0x21 (Input Mode=2) at init to unlock multitouch.
+### `driverkit/` — DriverKit multitouch driver (complete; blocked by firmware)
+
+A fully working dext: signs, loads, exclusively owns the digitizer interface,
+arms the interrupt pipe, and replays the captured Windows unlock sequence at
+every device attach. If the firmware ever honors the mode switch on macOS (or
+a firmware update changes behavior), this driver is ready to receive and
+forward 10-finger reports. Requires SIP disabled + sysext developer mode (it's
+development-signed). → [driverkit/README.md](driverkit/README.md)
+
+Hard-won DriverKit lessons documented in the diagnostic log, including: dev
+provisioning profiles exact-match the `transport.usb` wildcard entitlement;
+HID dexts need `IOClass = AppleUserHIDDevice` with
+`CFBundleIdentifierKernel = com.apple.iokit.IOHIDFamily`; and
+`amfi_get_out_of_my_way` *breaks* dext loading rather than helping it.
+
+### `linux/` — unlock replay test for Linux hosts
+
+pyusb script that replays the Windows unlock from a Linux machine and listens
+for multitouch reports. Determines whether the firmware gate is
+"Windows-only" or "anything-but-macOS" — which decides what a USB middlebox
+would need to emulate. → [linux/replay_unlock.py](linux/replay_unlock.py)
+
+### `docs/` — the evidence
+
+- [DIAGNOSTIC_LOG.md](docs/DIAGNOSTIC_LOG.md) — full investigation record:
+  every hypothesis tested and eliminated, with hardware-verified results
+- [xeneon_win11_unlock.pcapng](docs/xeneon_win11_unlock.pcapng) — USBPcap
+  capture of Windows 11 unlocking multitouch (the money packets: 110–113)
+- ioreg dumps, HID report descriptor decode, driver session logs
 
 ---
 
@@ -71,25 +81,33 @@ HID descriptor (Interface 0, confirmed):
 
 | Feature | Status |
 |---------|--------|
-| Correct-monitor click injection | ✅ Working (userspace) |
-| Single-touch with correct coordinates | ✅ Working (userspace) |
-| DriverKit driver matching hardware | ✅ Working (needs signing) |
-| Multitouch mode switch (Report 0x21) | ✅ Implemented (needs signing) |
-| 5-point multitouch event dispatch | 🔧 Implemented (needs signing + testing) |
-| Scroll synthesis | 📋 Planned |
+| Correct-display click injection (userspace) | ✅ Working |
+| Single-touch absolute coordinates (userspace) | ✅ Working |
+| DriverKit driver: build, sign, load, own interface 0 | ✅ Working |
+| Windows unlock sequence captured & decoded | ✅ Done |
+| Byte-exact unlock replay from macOS | ✅ Sent & ACK'd — firmware ignores it |
+| 10-finger multitouch on macOS | ❌ Blocked by firmware host-OS gating |
+| Linux host verdict | 🔬 Test script ready, result pending |
+| USB middlebox (Pi 4/5 proxy) | 📋 Designed, contingent on Linux verdict |
 
----
+## Known Mac Ecosystem
 
-## Contributing
+Both other public macOS projects for this device are single-touch userspace
+daemons that (correctly) concluded the hardware "only exposes single touch":
+[ajvwhite/MacXeneonEdgeTouchDriver](https://github.com/ajvwhite/MacXeneonEdgeTouchDriver),
+[ymlaine/TouchscreenDriver](https://github.com/ymlaine/TouchscreenDriver).
+This repo documents *why*: the multitouch hardware is fully present and
+advertised in the HID descriptor macOS receives — the firmware just refuses to
+stream it to a macOS host. UPDD (commercial) is blocked identically.
 
-The userspace driver is ready to use and improve today. The DriverKit driver needs someone with an Apple Developer Program membership and the `com.apple.developer.driverkit.transport.usb` entitlement to sign, test, and complete the multitouch dispatch.
+## Contributing / How You Can Help
 
-PRs welcome. See `userspace/tools/diagnose.py` to dump raw HID reports.
-
----
+- **Run the Linux test** (`linux/replay_unlock.py`) and report the verdict
+- **Corsair owners**: ask Corsair support about multitouch on non-Windows
+  hosts — the fix is almost certainly a firmware flag
+- Captures of the Edge under other OSes (ChromeOS, Android hosts) welcome
+- Middlebox prototyping (Pi 4/5 gadget mode) — see the diagnostic log
 
 ## License
 
-MIT — see [userspace/LICENSE](userspace/LICENSE)
-
-The DriverKit extension source is also MIT. If you ship a commercial product based on this work, a credit would be appreciated but is not required.
+MIT — see [userspace/LICENSE](userspace/LICENSE).
