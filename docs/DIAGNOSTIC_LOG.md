@@ -52,6 +52,11 @@ later. 54-byte reports: ID + 10×(flags, X16, Y16) + scantime16 + count8.
 
 ### Eliminated hypotheses (each tested on hardware)
 
+- UPDD retest (2026-06-12, v07.00.5): claimed the ENTIRE composite device
+  exclusively from userspace (UsbExclusiveOwner = updd daemon) — still no
+  multitouch. Third independent stack (our dext, Apple's, UPDD) to fail
+  identically on macOS.
+
 - SET_REPORT framing (with/without ID byte) — both accepted, no effect
 - Writing Max Contacts 0x0A — Windows never writes it; removed
 - MS OS descriptors — device STALLs string 0xEE; no MSFT100 support
