@@ -28,3 +28,4 @@ build/
 *.p12
 *.cer
 *.mobileprovision
+docs/outreach/
