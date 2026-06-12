@@ -108,6 +108,20 @@ stream it to a macOS host. UPDD (commercial) is blocked identically.
 - Captures of the Edge under other OSes (ChromeOS, Android hosts) welcome
 - Middlebox prototyping (Pi 4/5 gadget mode) — see the diagnostic log
 
+## Methodology & AI Assistance
+
+This investigation was carried out on real hardware by the repo owner: every
+USB capture, driver build, install/reboot cycle, and hardware test was run and
+verified physically. AI assistance (an LLM coding assistant) was used as a tool
+for parts of the analysis, driver code, and writing this documentation — the
+same way one might use a debugger, a search engine, or a knowledgeable
+collaborator.
+
+The conclusions don't rest on anyone's word, AI or human: they rest on the
+included USB packet capture ([docs/xeneon_win11_unlock.pcapng](docs/xeneon_win11_unlock.pcapng))
+and a reproducible driver. If something here is wrong, the capture and the code
+are right there to check — that's the point of publishing them.
+
 ## License
 
 MIT — see [userspace/LICENSE](userspace/LICENSE).
