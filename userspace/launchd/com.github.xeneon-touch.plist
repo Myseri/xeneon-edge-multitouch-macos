@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent for the Xeneon Edge single-touch daemon.
+
+  install.sh fills in the INSTALL_DIR and PYTHON_BIN placeholders and drops the
+  result in ~/Library/LaunchAgents/. As a per-user LaunchAgent it:
+    - RunAtLoad: starts at login automatically
+    - KeepAlive: relaunches if it crashes, and (because the daemon exits when no
+      Xeneon is connected) relaunches every ThrottleInterval seconds until the
+      monitor reappears — so plugging the display in brings touch back on its
+      own, no manual restart.
+  ProcessType Interactive because it injects UI (mouse) events.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.github.xeneon-touch</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>PYTHON_BIN</string>
+        <string>-m</string>
+        <string>xeneon_touch</string>
+    </array>
+
+    <!-- Run from the repo's userspace/ dir so `-m xeneon_touch` resolves. -->
+    <key>WorkingDirectory</key>
+    <string>INSTALL_DIR</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Don't hot-loop respawning while the monitor is unplugged. -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <!-- Ensure Homebrew's hidapi dylib and pip deps are on PATH. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/xeneon-touch.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/xeneon-touch.log</string>
+</dict>
+</plist>
