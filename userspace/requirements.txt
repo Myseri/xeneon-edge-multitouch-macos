@@ -1,4 +1,7 @@
-# Use 'hidapi' (not 'hid') - bundles native library, no brew dependency needed
+# Use the cython 'hidapi' package (provides hid.device()/.open()), NOT the
+# 'hid'/pyhidapi package — same import name, incompatible API.
+# Needs the native libhidapi.dylib at runtime: `brew install hidapi`. The
+# LaunchAgent passes its location via DYLD_FALLBACK_LIBRARY_PATH (see install.sh).
 hidapi>=0.14.0
 pyobjc-framework-Quartz>=10.0
 pyobjc-framework-ApplicationServices>=10.0

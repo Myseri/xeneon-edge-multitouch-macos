@@ -10,43 +10,63 @@ UID_NUM="$(id -u)"
 echo "=== xeneon-touch installer ==="
 echo ""
 
-# ── Dependencies ─────────────────────────────────────────────────────────────
-echo "→ Checking dependencies…"
-if ! command -v brew &>/dev/null; then
-    echo "  ERROR: Homebrew not found. Install from https://brew.sh"
-    exit 1
-fi
-brew list hidapi &>/dev/null || brew install hidapi
-
-# Resolve the python3 that has the deps to its REAL, fully-dereferenced binary
-# (e.g. /opt/homebrew/Cellar/python@3.12/.../bin/python3.12), not the
-# /opt/homebrew/bin/python3 symlink. macOS TCC permissions (Input Monitoring /
-# Accessibility) attach to the concrete binary; pinning the symlink means a
-# `brew upgrade python` that repoints it silently voids the grants and touch
-# dies with no error. Pinning the versioned binary survives that — at the cost
-# of needing a re-run of this installer + re-grant after a deliberate Python
-# version bump (3.12 -> 3.13).
+# ── Python (pinned to the real, fully-dereferenced binary) ───────────────────
+# macOS TCC permissions (Input Monitoring / Accessibility) attach to the
+# concrete on-disk binary, so pin the versioned executable (e.g.
+# .../Versions/3.14/bin/python3.14), not a `python3` symlink that a version
+# upgrade would repoint — that would silently void the grants and kill touch.
+echo "→ Resolving Python…"
 PYTHON_RAW="$(command -v python3)"
 if [ -z "$PYTHON_RAW" ]; then
     echo "  ERROR: python3 not found on PATH."
     exit 1
 fi
 PYTHON_BIN="$("$PYTHON_RAW" -c 'import os, sys; print(os.path.realpath(sys.executable))')"
-if [ ! -x "$PYTHON_BIN" ]; then
-    echo "  WARN: could not resolve real python path; falling back to $PYTHON_RAW"
-    PYTHON_BIN="$PYTHON_RAW"
+[ -x "$PYTHON_BIN" ] || PYTHON_BIN="$PYTHON_RAW"
+PY_ARCH="$("$PYTHON_BIN" -c 'import platform; print(platform.machine())')"
+echo "  Using python (pinned): $PYTHON_BIN  [$PY_ARCH]"
+
+# ── Homebrew (arch-matched to the interpreter) ───────────────────────────────
+# libhidapi must be the SAME architecture as the python that dlopen()s it. On
+# Apple Silicon an Intel/Rosetta brew at /usr/local builds an x86_64 dylib that
+# an arm64 python cannot load (and vice-versa). Pick the brew matching PY_ARCH.
+echo "→ Checking hidapi (arch-matched)…"
+case "$PY_ARCH" in
+    arm64)  BREW=/opt/homebrew/bin/brew ;;
+    x86_64) BREW=/usr/local/bin/brew ;;
+    *)      BREW="$(command -v brew)" ;;
+esac
+[ -x "$BREW" ] || BREW="$(command -v brew)"
+if [ -z "$BREW" ] || [ ! -x "$BREW" ]; then
+    echo "  ERROR: no Homebrew found for arch '$PY_ARCH'. Install from https://brew.sh"
+    exit 1
 fi
-echo "  Using python (pinned): $PYTHON_BIN"
-"$PYTHON_BIN" -m pip install hid pyobjc-framework-Quartz pyobjc-framework-ApplicationServices \
+echo "  Using brew: $BREW"
+"$BREW" list hidapi &>/dev/null || "$BREW" install hidapi
+HIDAPI_LIB_DIR="$("$BREW" --prefix hidapi)/lib"
+if [ ! -e "$HIDAPI_LIB_DIR/libhidapi.dylib" ]; then
+    echo "  ERROR: libhidapi.dylib not found in $HIDAPI_LIB_DIR"
+    exit 1
+fi
+echo "  hidapi lib: $HIDAPI_LIB_DIR"
+
+# ── Python packages ──────────────────────────────────────────────────────────
+# The code does `import hid` expecting the CYTHON 'hidapi' package
+# (hid.device(), dev.open()). The identically-imported 'hid' (pyhidapi) package
+# exposes a different API (hid.Device) and breaks it — remove it if present.
+echo "→ Installing Python packages…"
+"$PYTHON_BIN" -m pip uninstall -y hid >/dev/null 2>&1 || true
+"$PYTHON_BIN" -m pip install hidapi pyobjc-framework-Quartz pyobjc-framework-ApplicationServices \
     --break-system-packages -q
 
 # ── Install / reload the LaunchAgent ─────────────────────────────────────────
 echo "→ Installing LaunchAgent…"
 mkdir -p "$HOME/Library/LaunchAgents"
 
-# Render the template (substitute both placeholders).
+# Render the template (substitute all placeholders).
 sed -e "s|INSTALL_DIR|$INSTALL_DIR|g" \
     -e "s|PYTHON_BIN|$PYTHON_BIN|g" \
+    -e "s|HIDAPI_LIB_DIR|$HIDAPI_LIB_DIR|g" \
     "$PLIST_SRC" > "$PLIST_DEST"
 
 # Tear down any previous instance, then load fresh. Prefer modern bootstrap,

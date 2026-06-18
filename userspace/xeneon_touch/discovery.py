@@ -11,6 +11,7 @@ from .config import (
     VENDOR_ID, PRODUCT_ID,
     TARGET_USAGE_PAGE, TARGET_USAGE,
     DISPLAY_NAME_HINTS, DISPLAY_RESOLUTION,
+    DISPLAY_CG_VENDOR, DISPLAY_CG_MODEL,
 )
 
 log = logging.getLogger(__name__)
@@ -51,40 +52,63 @@ def find_digitizer_path() -> Optional[bytes]:
     return None
 
 
-def find_xeneon_display() -> Tuple[Optional[object], Optional[int]]:
-    """Return (NSRect frame, CGDirectDisplayID) for the Xeneon Edge display."""
-    # Name-based detection (macOS 10.15+)
+def _online_display_ids() -> Tuple[int, ...]:
+    """CGGetOnlineDisplayList ids — a live window-server query (always fresh)."""
+    try:
+        _err, ids, _count = Quartz.CGGetOnlineDisplayList(16, None, None)
+        return tuple(ids) if ids else ()
+    except Exception as e:  # pragma: no cover
+        log.debug("CGGetOnlineDisplayList failed: %s", e)
+        return ()
+
+
+def find_xeneon_display(quiet: bool = False) -> Tuple[Optional[object], Optional[int]]:
+    """Return (CGRect frame, CGDirectDisplayID) for the Xeneon Edge, or (None, None).
+
+    Detection is CoreGraphics-first: CG reports each display's hardware identity
+    and online status live, whereas NSScreen.screens() caches its list for the
+    life of the process and will keep reporting an unplugged display. quiet=True
+    downgrades logging to debug for repeated polling (waiting/watching).
+    """
+    info = log.debug if quiet else log.info
+    err  = log.debug if quiet else log.error
+
+    online = _online_display_ids()
+
+    # Primary: match the Edge by CG hardware identity (vendor + model). Fresh.
+    for display_id in online:
+        if (Quartz.CGDisplayVendorNumber(display_id) == DISPLAY_CG_VENDOR and
+                Quartz.CGDisplayModelNumber(display_id) == DISPLAY_CG_MODEL):
+            frame = Quartz.CGDisplayBounds(display_id)
+            info(
+                "Found Xeneon Edge (CG vendor=%s model=%s) id=%s "
+                "origin=(%.0f,%.0f) size=%.0fx%.0f",
+                DISPLAY_CG_VENDOR, DISPLAY_CG_MODEL, display_id,
+                frame.origin.x, frame.origin.y, frame.size.width, frame.size.height,
+            )
+            return frame, display_id
+
+    # Fallback: NSScreen name match, but only accept it if CG confirms that
+    # display is actually online right now (NSScreen's list may be stale).
     for screen in AppKit.NSScreen.screens():
         name = str(screen.localizedName()) if hasattr(screen, "localizedName") else ""
         for hint in DISPLAY_NAME_HINTS:
             if hint.upper() in name.upper():
                 display_id = _nsscreen_to_cgdisplay(screen)
-                # Use CGDisplayBounds — same coordinate system as CGWarpMouseCursorPosition
-                frame      = Quartz.CGDisplayBounds(display_id)
-                log.info(
-                    "Found Xeneon Edge: '%s' id=%s origin=(%.0f,%.0f) size=%.0fx%.0f",
+                if display_id not in online:
+                    continue   # stale NSScreen entry — not really connected
+                frame = Quartz.CGDisplayBounds(display_id)
+                info(
+                    "Found Xeneon Edge by name '%s' id=%s "
+                    "origin=(%.0f,%.0f) size=%.0fx%.0f",
                     name, display_id,
-                    frame.origin.x, frame.origin.y,
-                    frame.size.width, frame.size.height,
+                    frame.origin.x, frame.origin.y, frame.size.width, frame.size.height,
                 )
                 return frame, display_id
 
-    # Resolution fallback
-    log.warning(
-        "Display name match failed, falling back to %dx%d",
-        *DISPLAY_RESOLUTION,
-    )
-    _, display_list = Quartz.CGGetOnlineDisplayList(16, None, None)
-    for display_id in display_list:
-        bounds = Quartz.CGDisplayBounds(display_id)
-        if (int(bounds.size.width), int(bounds.size.height)) == DISPLAY_RESOLUTION:
-            log.info("Found %dx%d display id=%s", *DISPLAY_RESOLUTION, display_id)
-            return bounds, display_id
-
-    log.error(
-        "Could not find Xeneon Edge display. "
-        "Hints tried: %s, fallback resolution: %dx%d",
-        DISPLAY_NAME_HINTS, *DISPLAY_RESOLUTION,
+    err(
+        "Xeneon Edge display not found (CG vendor=%s model=%s; name hints=%s).",
+        DISPLAY_CG_VENDOR, DISPLAY_CG_MODEL, DISPLAY_NAME_HINTS,
     )
     return None, None
 

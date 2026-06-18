@@ -41,11 +41,18 @@
     <key>ProcessType</key>
     <string>Interactive</string>
 
-    <!-- Ensure Homebrew's hidapi dylib and pip deps are on PATH. -->
+    <!--
+      A GUI LaunchAgent does NOT inherit your shell's dynamic-library search
+      path, so the `hid`/hidapi package can't find libhidapi.dylib on its own.
+      We pass the Homebrew hidapi lib dir explicitly — install.sh fills in
+      HIDAPI_LIB_DIR with the arch-matched hidapi lib directory.
+    -->
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>DYLD_FALLBACK_LIBRARY_PATH</key>
+        <string>HIDAPI_LIB_DIR</string>
     </dict>
 
     <key>StandardOutPath</key>

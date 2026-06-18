@@ -10,7 +10,9 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
 dependencies = [
-    "hid>=1.0.5",
+    # cython 'hidapi' (provides hid.device()/.open()) — NOT the 'hid'/pyhidapi
+    # package, which shares the import name but has an incompatible API.
+    "hidapi>=0.14.0",
     "pyobjc-framework-Quartz>=10.0",
     "pyobjc-framework-ApplicationServices>=10.0",
 ]
@@ -19,5 +21,5 @@ dependencies = [
 xeneon-touch = "xeneon_touch.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/YOUR_USERNAME/xeneon-touch"
-Issues   = "https://github.com/YOUR_USERNAME/xeneon-touch/issues"
+Homepage = "https://github.com/Myseri/xeneon-edge-multitouch-macos"
+Issues   = "https://github.com/Myseri/xeneon-edge-multitouch-macos/issues"

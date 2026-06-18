@@ -35,6 +35,13 @@ TARGET_USAGE      = USAGE_TOUCHSCREEN
 DISPLAY_NAME_HINTS = ("XENEON EDGE", "XENEON", "CRXED00")
 DISPLAY_RESOLUTION = (2560, 1080)
 
+# CoreGraphics hardware identity of the Edge panel. CG reports these live
+# (unlike NSScreen, whose screen list is cached for the life of the process),
+# so we match on them for connect/disconnect detection. Serial is a placeholder
+# (0x01010101) on this controller, so we match vendor + model only.
+DISPLAY_CG_VENDOR = 3672
+DISPLAY_CG_MODEL  = 60672
+
 # HID read settings
 READ_TIMEOUT_MS = 10
 DAEMON_SLEEP_S  = 0.001

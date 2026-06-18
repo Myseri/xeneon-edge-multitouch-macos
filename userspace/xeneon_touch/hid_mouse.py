@@ -82,6 +82,10 @@ class HIDMouseReader:
     def stop(self):
         self._running = False
 
+    def alive(self) -> bool:
+        """True while the read thread is running (False once the device drops)."""
+        return self._thread is not None and self._thread.is_alive()
+
     def read(self, timeout: float = 0.05) -> Optional[MouseTouchReport]:
         try:
             return self._q.get(timeout=timeout)
@@ -108,7 +112,13 @@ class HIDMouseReader:
 
         last_touch = False
         while self._running:
-            data = dev.read(16)
+            try:
+                data = dev.read(16)
+            except (OSError, ValueError) as e:
+                # Device went away (monitor unplugged) — exit cleanly; the
+                # daemon's supervisor will notice and wait for reconnect.
+                log.info("Mouse interface read ended (%s) — device gone?", e)
+                break
             if not data:
                 time.sleep(0.001)
                 continue
@@ -135,5 +145,8 @@ class HIDMouseReader:
 
             last_touch = touch
 
-        dev.close()
+        try:
+            dev.close()
+        except Exception:
+            pass
         log.info("HIDMouseReader stopped.")
