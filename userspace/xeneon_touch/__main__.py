@@ -4,7 +4,7 @@ import argparse
 import logging
 import sys
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 def _run_as_background_agent():
