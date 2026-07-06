@@ -11,9 +11,53 @@ command-line / framework-python binary to appear there enabled (a manual
 file-picker add of such a binary stays greyed out).
 """
 
+import ctypes
 import logging
 
 log = logging.getLogger(__name__)
+
+# IOHIDRequestType / IOHIDAccessType (IOKit/hid/IOHIDLibUserClient.h)
+_kIOHIDRequestTypeListenEvent = 1
+_kIOHIDAccessTypeGranted = 0
+
+
+def ensure_input_monitoring(prompt: bool = True) -> bool:
+    """Return True if this process may listen to HID input events.
+
+    macOS gates reading HID devices behind Input Monitoring
+    (kTCCServiceListenEvent). Opening the device via hidapi does NOT reliably
+    trigger the prompt or register the binary, so we call IOHIDRequestAccess
+    explicitly — the Input Monitoring analogue of AXIsProcessTrustedWithOptions.
+    That registers *this* binary in the list (no need to add it by hand) and,
+    when not yet granted, shows the prompt. Never raises.
+    """
+    try:
+        iokit = ctypes.cdll.LoadLibrary(
+            "/System/Library/Frameworks/IOKit.framework/IOKit"
+        )
+        iokit.IOHIDCheckAccess.restype = ctypes.c_int
+        iokit.IOHIDCheckAccess.argtypes = [ctypes.c_uint32]
+        iokit.IOHIDRequestAccess.restype = ctypes.c_bool
+        iokit.IOHIDRequestAccess.argtypes = [ctypes.c_uint32]
+    except Exception as e:  # pragma: no cover
+        log.warning("Could not load IOHID access API (%s); skipping check.", e)
+        return True
+
+    granted = iokit.IOHIDCheckAccess(_kIOHIDRequestTypeListenEvent) == _kIOHIDAccessTypeGranted
+    if granted:
+        log.info("Input Monitoring permission: granted.")
+        return True
+
+    if prompt:
+        # Registers this binary in the Input Monitoring list and prompts.
+        iokit.IOHIDRequestAccess(_kIOHIDRequestTypeListenEvent)
+    log.warning(
+        "Input Monitoring permission NOT granted — the touch device cannot be "
+        "read. Enable this binary under System Settings -> Privacy & Security "
+        "-> Input Monitoring, then restart the service "
+        "(brew services restart xeneon-touch)."
+    )
+    return False
 
 
 def ensure_accessibility(prompt: bool = True) -> bool:

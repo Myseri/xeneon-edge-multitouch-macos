@@ -18,7 +18,7 @@ from .mouse_frame_reader import MouseFrameReader
 from .hid_mouse import find_mouse_path
 from .injector import TouchInjector
 from .mode_switch import send_mode_switch
-from .permissions import ensure_accessibility
+from .permissions import ensure_accessibility, ensure_input_monitoring
 
 log = logging.getLogger(__name__)
 
@@ -36,8 +36,11 @@ class XeneonTouchDaemon:
     def run(self):
         log.info("xeneon-touch starting…")
 
-        # Request Accessibility once up front. The cursor warps without it, but
-        # clicks/drags are dropped until it's granted.
+        # Request both permissions up front so macOS registers this binary and
+        # prompts: Input Monitoring (to read the touch device) and Accessibility
+        # (to inject clicks). Without them the daemon runs but sees no touches
+        # and/or drops clicks.
+        ensure_input_monitoring(prompt=True)
         ensure_accessibility(prompt=True)
 
         self._running = True
