@@ -42,8 +42,22 @@ OS during enumeration, below anything host software can influence.
 ### `userspace/` — single-touch daemon (works today)
 
 Python daemon that reads the touch data macOS *does* get and injects clicks at
-the correct absolute position on the Edge's display. No kernel code, no
-signing, installs in seconds. → [userspace/README.md](userspace/README.md)
+the correct absolute position on the Edge's display. It runs as a background
+LaunchAgent: starts at login, no Dock icon, and recovers on its own when you
+unplug and replug the monitor. No kernel code, no signing.
+
+Install with Homebrew:
+
+```bash
+brew tap Myseri/xeneon-edge
+brew install xeneon-touch
+brew services start xeneon-touch
+```
+
+Then grant the two one-time permissions Homebrew prints (Input Monitoring and
+Accessibility) and `brew services restart xeneon-touch`. Full details, including
+a manual `install.sh` alternative, are in
+[userspace/README.md](userspace/README.md).
 
 ### `driverkit/` — DriverKit multitouch driver (complete; blocked by firmware)
 

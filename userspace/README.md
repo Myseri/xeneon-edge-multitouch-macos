@@ -26,11 +26,27 @@ macOS today) because the firmware withholds it — see the
 
 ## Install
 
+### Homebrew (recommended)
+
+```bash
+brew tap Myseri/xeneon-edge
+brew install xeneon-touch
+brew services start xeneon-touch      # starts now + at every login
+```
+
+Updates are then just `brew upgrade xeneon-touch`. After the first start, grant
+the two one-time permissions below and `brew services restart xeneon-touch`.
+
+### Manual (from source)
+
 ```bash
 git clone https://github.com/Myseri/xeneon-edge-multitouch-macos
 cd xeneon-edge-multitouch-macos/userspace
 ./install.sh
 ```
+
+Use one or the other — don't run both the Homebrew service and the `install.sh`
+LaunchAgent at once, or two daemons will fight over the touch device.
 
 The installer:
 
